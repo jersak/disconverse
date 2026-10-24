@@ -1,0 +1,13 @@
+# API keys come from the LIVEKIT_KEYS env var (see .env on the server).
+port: 7880 # signaling (HTTP/WS) — reached only through Caddy at RTC_DOMAIN
+rtc:
+  tcp_port: 7881 # media fallback for UDP-blocked networks (forwarded on router)
+  udp_port: 7882 # all UDP media multiplexed on one port (forwarded on router)
+  use_external_ip: true # discover public IP via STUN; we're behind home NAT
+  skip_external_ip_validation: true # router has no hairpin NAT, so the self-ping check always fails
+  advertise_internal_ip: true # also offer the LAN IP so clients at home connect directly
+  ips:
+    includes:
+      - 192.168.1.0/24 # your LAN subnet: only the LAN interface (skips docker bridges, VPNs, IPv6). Adjust to yours.
+logging:
+  level: info

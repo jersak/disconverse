@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+.deploy.env
+data/
+*.db
+*.db-wal
+*.db-shm
+CLAUDE.local.md

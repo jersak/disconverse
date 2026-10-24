@@ -1,0 +1,47 @@
+services:
+  livekit:
+    image: livekit/livekit-server:v1.13.8
+    restart: unless-stopped
+    # Host networking is LiveKit's recommended mode: no NAT layer in front of media ports.
+    network_mode: host
+    command: --config /etc/livekit.yaml
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+
+  backend:
+    build: ./src # source copied here by scripts/deploy.sh
+    image: disconverse-backend
+    restart: unless-stopped
+    environment:
+      LIVEKIT_URL: wss://${RTC_DOMAIN:?Set RTC_DOMAIN in .env}
+      # LiveKit runs on the host network; reach its API directly (no hairpin NAT needed).
+      LIVEKIT_API_URL: http://host.docker.internal:7880
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
+      PUBLIC_ORIGIN: https://${APP_DOMAIN:?Set APP_DOMAIN in .env}
+      UPLOADS_DIR: /uploads
+      REQUIRE_UPLOADS_MARKER: "true"
+      MAX_IMAGE_MB: ${MAX_IMAGE_MB:-30}
+      MAX_VIDEO_MB: ${MAX_VIDEO_MB:-300}
+      GIPHY_API_KEY: ${GIPHY_API_KEY:-}
+      TENOR_API_KEY: ${TENOR_API_KEY:-}
+      GIF_CONTENT_FILTER: ${GIF_CONTENT_FILTER:-medium}
+      APP_VERSION: ${APP_VERSION:-unknown} # set by scripts/deploy.sh (git commit)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - backend_data:/data # database (SSD)
+      # Uploaded files: host folder set in .env (see .env.example); must contain .disconverse-storage
+      - ${UPLOADS_PATH:?Set UPLOADS_PATH in .env}:/uploads
+    networks:
+      proxy:
+        aliases: [disconverse-backend]
+
+volumes:
+  backend_data:
+
+networks:
+  proxy:
+    external: true

@@ -1,0 +1,16 @@
+{
+  "name": "disconverse",
+  "private": true,
+  "license": "GPL-3.0-or-later",
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev:server": "npm run dev -w server",
+    "dev:client": "npm run dev -w client",
+    "build": "npm run build -w client",
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w client",
+    "invite": "npm run invite -w server --"
+  }
+}

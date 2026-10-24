@@ -1,0 +1,8 @@
+# Hostnames come from .env (see .env.example); Caddy obtains their certificates automatically.
+{$APP_DOMAIN} {
+	reverse_proxy disconverse-backend:3000
+}
+
+{$RTC_DOMAIN} {
+	reverse_proxy host.docker.internal:7880
+}

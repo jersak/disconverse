@@ -1,0 +1,27 @@
+services:
+  caddy:
+    image: caddy:2.11
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?Set APP_DOMAIN in .env}
+      RTC_DOMAIN: ${RTC_DOMAIN:?Set RTC_DOMAIN in .env}
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # reach LiveKit, which uses host networking
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - proxy
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  proxy:
+    name: proxy
