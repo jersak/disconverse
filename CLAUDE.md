@@ -64,7 +64,8 @@ backend (with `APP_VERSION` = commit) and reloads Caddy.
 4. [x] Video: webcam + screen share (quality presets, simulcast, H.264 for screen shares, system
    audio where the browser allows), stage grid with spotlight/fullscreen, opt-in "Watch Stream"
    (client connects with autoSubscribe off), stats overlay.
-5. [ ] Electron: screen/window picker with system audio, push-to-talk, tray, auto-update.
+5. [ ] Electron (separate repo `disconverse-desktop`, Windows only): picker with system audio, tray and
+   auto-update done; push-to-talk and echo-free system audio pending.
 6. [x] Roles (owner/admin/member) and channels: create/rename/delete text and voice channels,
    per-channel history and unread markers, in-app invites, owner manages roles. First account = owner.
 7. [ ] Later: message deletion/moderation, reordering channels, reactions, notifications,

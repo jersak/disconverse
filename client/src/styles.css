@@ -17,7 +17,9 @@
   --link: #00a8fc;
 
   color-scheme: dark;
-  font-family: "gg sans", "Segoe UI", "Noto Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  /* The system's emoji fonts first; the bundled one (emojiFont.ts) only draws what they lack. */
+  font-family: "gg sans", "Segoe UI", "Noto Sans", "Helvetica Neue", Helvetica, Arial, "Segoe UI Emoji",
+    "Apple Color Emoji", "Noto Color Emoji", "Disconverse Emoji", sans-serif;
   font-size: 16px;
   color: var(--text);
   background: var(--bg-darkest);

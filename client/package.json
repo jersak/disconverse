@@ -10,6 +10,7 @@
     "typecheck": "tsc -p ."
   },
   "dependencies": {
+    "@fontsource/noto-color-emoji": "5.3.2",
     "@sapphi-red/web-noise-suppressor": "0.4.1",
     "emojilib": "4.0.3",
     "livekit-client": "2.22.3",
