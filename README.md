@@ -3,6 +3,8 @@
 A small, self-hosted Discord-style app for a group of friends: text and voice channels, webcam and
 screen sharing. Built to run on a single home server.
 
+![Text chat with channels, an image attachment, a mention and the member list](docs/screenshots/chat.png)
+
 ## Features
 
 - **Text channels** with history, unread markers, presence, links, and image/video attachments
@@ -25,6 +27,17 @@ screen sharing. Built to run on a single home server.
 - **Invite-only accounts** and three roles: the **owner** (first account) manages roles; **admins**
   create, rename and delete channels and create invites; **members** chat and talk
 - Works on desktop and mobile browsers
+
+## Screenshots
+
+| | |
+|---|---|
+| ![Voice channel with a screen share and webcams](docs/screenshots/voice.png) | ![Emoji picker](docs/screenshots/emoji.png) |
+| Voice channel: watching a screen share, with webcams below | Emoji picker with search |
+| ![Noise suppression settings](docs/screenshots/settings.png) | ![Admin panel media browser](docs/screenshots/admin-media.png) |
+| Settings: local noise suppression | Admin panel: media browser and automatic cleanup |
+
+The people, messages and pictures are made-up demo data.
 
 ## How it works
 
