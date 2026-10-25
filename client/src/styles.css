@@ -794,6 +794,24 @@ button.link:hover {
   color: white;
 }
 
+.stream-volume {
+  display: flex;
+  align-items: center;
+  padding-right: 10px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.tile-actions .stream-volume .icon-button {
+  background: transparent;
+}
+
+.stream-volume input[type="range"] {
+  width: 90px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 .call-controls {
   position: absolute;
   left: 50%;

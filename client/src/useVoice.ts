@@ -74,6 +74,19 @@ const micCapture = (s: AudioSettings, deviceId: string): AudioCaptureOptions => 
 /** Mobile browsers can't capture the screen. */
 export const canShareScreen = typeof navigator.mediaDevices?.getDisplayMedia === "function";
 
+/** How loud someone's screen share sound plays for us (remembered per person on this device). */
+export type StreamAudio = { volume: number; muted: boolean };
+export const DEFAULT_STREAM_AUDIO: StreamAudio = { volume: 1, muted: false };
+const STREAM_AUDIO_KEY = "disconverse.streamAudio";
+
+function loadStreamAudio(): Record<string, StreamAudio> {
+  try {
+    return JSON.parse(localStorage.getItem(STREAM_AUDIO_KEY) ?? "null") ?? {};
+  } catch {
+    return {};
+  }
+}
+
 /** Hidden container holding the <audio> elements for remote participants. */
 function audioContainer(): HTMLElement {
   let el = document.getElementById("voice-audio");
@@ -136,6 +149,9 @@ export function useVoice(onMembershipChange: () => void) {
   const appliedSuppression = useRef(audioSettings.suppression);
   const deafenedRef = useRef(deafened);
   deafenedRef.current = deafened;
+  const [streamAudio, setStreamAudioState] = useState(loadStreamAudio);
+  const streamAudioRef = useRef(streamAudio);
+  streamAudioRef.current = streamAudio;
   const onChangeRef = useRef(onMembershipChange);
   onChangeRef.current = onMembershipChange;
 
@@ -171,6 +187,33 @@ export function useVoice(onMembershipChange: () => void) {
     if (kind === "join") playJoinSound(sink);
     else playLeaveSound(sink);
   }, []);
+
+  /** Applies deafen and per-stream volume/mute to every remote <audio> element. */
+  const applyAudioElements = useCallback(() => {
+    document.querySelectorAll<HTMLMediaElement>("#voice-audio audio").forEach((el) => {
+      const stream = el.dataset.stream ? (streamAudioRef.current[el.dataset.stream] ?? DEFAULT_STREAM_AUDIO) : null;
+      // Deafen silences voices only: streams keep playing (e.g. a movie night), with their own mute.
+      // iPhones ignore volume (always 1), but muting works everywhere.
+      el.muted = stream ? stream.muted : deafenedRef.current;
+      el.volume = stream?.volume ?? 1;
+    });
+  }, []);
+
+  const setStreamAudio = useCallback(
+    (userId: number, change: Partial<StreamAudio>) => {
+      const key = String(userId);
+      const next = { ...streamAudioRef.current, [key]: { ...(streamAudioRef.current[key] ?? DEFAULT_STREAM_AUDIO), ...change } };
+      streamAudioRef.current = next;
+      setStreamAudioState(next);
+      try {
+        localStorage.setItem(STREAM_AUDIO_KEY, JSON.stringify(next));
+      } catch {
+        // not essential
+      }
+      applyAudioElements();
+    },
+    [applyAudioElements],
+  );
 
   const refresh = useCallback(() => {
     const room = roomRef.current;
@@ -273,11 +316,12 @@ export function useVoice(onMembershipChange: () => void) {
         subscribeByDefault(pub);
         refresh();
       })
-      .on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
+      .on(RoomEvent.TrackSubscribed, (track: RemoteTrack, _pub: RemoteTrackPublication, participant: Participant) => {
         if (track.kind === Track.Kind.Audio) {
           const el = track.attach();
-          el.muted = deafenedRef.current;
+          if (track.source === Track.Source.ScreenShareAudio) el.dataset.stream = participant.identity;
           audioContainer().appendChild(el);
+          applyAudioElements();
         }
         refresh();
       })
@@ -334,7 +378,7 @@ export function useVoice(onMembershipChange: () => void) {
       setError(`Couldn't join voice: ${describe(err)}`);
       await room.disconnect();
     }
-  }, [muted, deafened, refresh, setMicEnabled, refreshDevices, chime]);
+  }, [muted, deafened, refresh, setMicEnabled, refreshDevices, chime, applyAudioElements]);
 
   const leave = useCallback(() => {
     setError(null);
@@ -343,7 +387,8 @@ export function useVoice(onMembershipChange: () => void) {
 
   const applyDeafen = (value: boolean) => {
     setDeafened(value);
-    document.querySelectorAll<HTMLMediaElement>("#voice-audio audio").forEach((el) => (el.muted = value));
+    deafenedRef.current = value;
+    applyAudioElements();
   };
 
   const toggleMute = useCallback(() => {
@@ -471,6 +516,8 @@ export function useVoice(onMembershipChange: () => void) {
     startScreenShare,
     stopScreenShare,
     watchStream,
+    streamAudio,
+    setStreamAudio,
     audioSettings,
     setAudioSettings,
     micLevel,

@@ -4,7 +4,15 @@ import type { Channel } from "./api.ts";
 import { StreamStats } from "./StreamStats.tsx";
 import { Avatar, Icon } from "./ui.tsx";
 import { profileOf, useUsers } from "./users.tsx";
-import { canShareScreen, isFirefox, STREAM_QUALITIES, type Voice, type VoiceParticipant } from "./useVoice.ts";
+import {
+  canShareScreen,
+  DEFAULT_STREAM_AUDIO,
+  isFirefox,
+  STREAM_QUALITIES,
+  type StreamAudio,
+  type Voice,
+  type VoiceParticipant,
+} from "./useVoice.ts";
 
 type Tile = { key: string; kind: "user" | "screen"; p: VoiceParticipant };
 
@@ -17,6 +25,32 @@ function Video({ track, mirror = false, fit = "cover" }: { track: VideoTrack; mi
     return () => void track.detach(el);
   }, [track]);
   return <video ref={ref} className={`tile-video${mirror ? " mirror" : ""}`} style={{ objectFit: fit }} autoPlay playsInline muted />;
+}
+
+/** Mute button and volume slider for a stream's sound. */
+function StreamVolume({ audio, onChange }: { audio: StreamAudio; onChange: (change: Partial<StreamAudio>) => void }) {
+  const silent = audio.muted || audio.volume === 0;
+  const stop = (e: MouseEvent) => e.stopPropagation(); // don't focus or fullscreen the tile
+  return (
+    <div className="stream-volume" onClick={stop} onDoubleClick={stop}>
+      <button
+        className="icon-button"
+        title={silent ? "Unmute stream" : "Mute stream"}
+        onClick={() => onChange(audio.volume === 0 ? { volume: 1, muted: false } : { muted: !audio.muted })}
+      >
+        <Icon name="speaker" slashed={silent} />
+      </button>
+      <input
+        type="range"
+        min={0}
+        max={100}
+        value={audio.muted ? 0 : Math.round(audio.volume * 100)}
+        onChange={(e) => onChange({ volume: Number(e.target.value) / 100, muted: false })}
+        aria-label="Stream volume"
+        title={`Volume: ${audio.muted ? 0 : Math.round(audio.volume * 100)}%`}
+      />
+    </div>
+  );
 }
 
 type IOSVideo = HTMLVideoElement & { webkitEnterFullscreen?: () => void };
@@ -181,6 +215,12 @@ export function Stage({
           {p.isLocal ? "Your screen" : `${profile.name}'s screen`}
         </div>
         <div className="tile-actions">
+          {!p.isLocal && screen.watching && screen.hasAudio && (
+            <StreamVolume
+              audio={voice.streamAudio[p.userId] ?? DEFAULT_STREAM_AUDIO}
+              onChange={(change) => voice.setStreamAudio(p.userId, change)}
+            />
+          )}
           {showVideo && statsButton(t.key)}
           <button className="icon-button" title="Fullscreen" onClick={toggleFullscreen(t.key)}>
             <Icon name="fullscreen" />
