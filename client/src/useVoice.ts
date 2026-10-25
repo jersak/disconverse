@@ -74,18 +74,32 @@ const micCapture = (s: AudioSettings, deviceId: string): AudioCaptureOptions => 
 /** Mobile browsers can't capture the screen. */
 export const canShareScreen = typeof navigator.mediaDevices?.getDisplayMedia === "function";
 
-/** How loud someone's screen share sound plays for us (remembered per person on this device). */
-export type StreamAudio = { volume: number; muted: boolean };
-export const DEFAULT_STREAM_AUDIO: StreamAudio = { volume: 1, muted: false };
-const STREAM_AUDIO_KEY = "disconverse.streamAudio";
+/** How loud someone's voice or stream sound plays for us (remembered per person on this device). */
+export type Playback = { volume: number; muted: boolean };
+export const DEFAULT_PLAYBACK: Playback = { volume: 1, muted: false };
+/** Voices can be boosted up to 200% (streams up to 100%). */
+export const MAX_VOICE_VOLUME = 2;
+export type PlaybackKind = "voice" | "stream";
+type PlaybackSettings = Record<PlaybackKind, Record<string, Playback>>;
+const PLAYBACK_KEYS: Record<PlaybackKind, string> = {
+  voice: "disconverse.voiceAudio",
+  stream: "disconverse.streamAudio",
+};
 
-function loadStreamAudio(): Record<string, StreamAudio> {
-  try {
-    return JSON.parse(localStorage.getItem(STREAM_AUDIO_KEY) ?? "null") ?? {};
-  } catch {
-    return {};
-  }
+function loadPlayback(): PlaybackSettings {
+  const load = (kind: PlaybackKind) => {
+    try {
+      return JSON.parse(localStorage.getItem(PLAYBACK_KEYS[kind]) ?? "null") ?? {};
+    } catch {
+      return {};
+    }
+  };
+  return { voice: load("voice"), stream: load("stream") };
 }
+
+/** A voice played louder than 100%: routed through a gain node into its own <audio> element. */
+type Boost = { el: HTMLAudioElement; source: MediaStreamAudioSourceNode; gain: GainNode };
+let boostContext: AudioContext | null = null;
 
 /** Hidden container holding the <audio> elements for remote participants. */
 function audioContainer(): HTMLElement {
@@ -149,9 +163,16 @@ export function useVoice(onMembershipChange: () => void) {
   const appliedSuppression = useRef(audioSettings.suppression);
   const deafenedRef = useRef(deafened);
   deafenedRef.current = deafened;
-  const [streamAudio, setStreamAudioState] = useState(loadStreamAudio);
-  const streamAudioRef = useRef(streamAudio);
-  streamAudioRef.current = streamAudio;
+  const [playback, setPlaybackState] = useState(loadPlayback);
+  const playbackRef = useRef(playback);
+  playbackRef.current = playback;
+  /** Boosted voices, by the <audio> element LiveKit attached for them. */
+  const boostsRef = useRef(new Map<HTMLMediaElement, Boost>());
+  /**
+   * Our <audio> element per remote track. Kept here because LiveKit may detach a track itself
+   * before reporting it unsubscribed (e.g. when someone leaves), leaving track.detach() empty.
+   */
+  const audioElementsRef = useRef(new Map<RemoteTrack, HTMLMediaElement>());
   const onChangeRef = useRef(onMembershipChange);
   onChangeRef.current = onMembershipChange;
 
@@ -188,25 +209,87 @@ export function useVoice(onMembershipChange: () => void) {
     else playLeaveSound(sink);
   }, []);
 
-  /** Applies deafen and per-stream volume/mute to every remote <audio> element. */
-  const applyAudioElements = useCallback(() => {
-    document.querySelectorAll<HTMLMediaElement>("#voice-audio audio").forEach((el) => {
-      const stream = el.dataset.stream ? (streamAudioRef.current[el.dataset.stream] ?? DEFAULT_STREAM_AUDIO) : null;
-      // Deafen silences voices only: streams keep playing (e.g. a movie night), with their own mute.
-      // iPhones ignore volume (always 1), but muting works everywhere.
-      el.muted = stream ? stream.muted : deafenedRef.current;
-      el.volume = stream?.volume ?? 1;
-    });
+  const removeBoost = useCallback((el: HTMLMediaElement) => {
+    const boost = boostsRef.current.get(el);
+    if (!boost) return;
+    boost.source.disconnect();
+    boost.gain.disconnect();
+    boost.el.srcObject = null;
+    boost.el.remove();
+    boostsRef.current.delete(el);
   }, []);
 
-  const setStreamAudio = useCallback(
-    (userId: number, change: Partial<StreamAudio>) => {
+  /**
+   * Element volume can't go above 100%, so a boosted voice plays through Web Audio instead. The
+   * original element stays attached (muted): Chrome only delivers remote audio to Web Audio then.
+   */
+  const boostFor = useCallback((el: HTMLMediaElement): Boost => {
+    const existing = boostsRef.current.get(el);
+    if (existing) return existing;
+    const ctx = (boostContext ??= new AudioContext());
+    void ctx.resume();
+    const source = ctx.createMediaStreamSource(el.srcObject as MediaStream);
+    const gain = ctx.createGain();
+    const destination = ctx.createMediaStreamDestination();
+    source.connect(gain).connect(destination);
+    const out = new Audio();
+    out.dataset.boost = "";
+    out.srcObject = destination.stream;
+    const sink = deviceSettingsRef.current.audiooutput;
+    if (sink) void out.setSinkId?.(sink).catch(() => {});
+    audioContainer().appendChild(out);
+    void out.play().catch(() => {});
+    const boost = { el: out, source, gain };
+    boostsRef.current.set(el, boost);
+    return boost;
+  }, []);
+
+  const removeAudioElement = useCallback(
+    (track: RemoteTrack) => {
+      const el = audioElementsRef.current.get(track);
+      if (!el) return;
+      removeBoost(el);
+      el.remove();
+      audioElementsRef.current.delete(track);
+    },
+    [removeBoost],
+  );
+
+  /** Applies deafen and per-person volume/mute to every remote <audio> element. */
+  const applyAudioElements = useCallback(() => {
+    document.querySelectorAll<HTMLMediaElement>("#voice-audio audio:not([data-boost])").forEach((el) => {
+      // iPhones ignore volume (always 1), but muting works everywhere.
+      if (el.dataset.stream) {
+        // Deafen silences voices only: streams keep playing (e.g. a movie night), with their own mute.
+        const s = playbackRef.current.stream[el.dataset.stream] ?? DEFAULT_PLAYBACK;
+        el.muted = s.muted;
+        el.volume = Math.min(s.volume, 1);
+        return;
+      }
+      const v = (el.dataset.voice && playbackRef.current.voice[el.dataset.voice]) || DEFAULT_PLAYBACK;
+      const silent = deafenedRef.current || v.muted;
+      if (v.volume > 1 && !silent) {
+        boostFor(el).gain.gain.value = v.volume;
+        el.muted = true;
+      } else {
+        removeBoost(el);
+        el.muted = silent;
+        el.volume = Math.min(v.volume, 1);
+      }
+    });
+  }, [boostFor, removeBoost]);
+
+  /** Sets how loud someone's voice or stream plays for us. */
+  const setPlayback = useCallback(
+    (kind: PlaybackKind, userId: number, change: Partial<Playback>) => {
       const key = String(userId);
-      const next = { ...streamAudioRef.current, [key]: { ...(streamAudioRef.current[key] ?? DEFAULT_STREAM_AUDIO), ...change } };
-      streamAudioRef.current = next;
-      setStreamAudioState(next);
+      const current = playbackRef.current;
+      const updated = { ...current[kind], [key]: { ...(current[kind][key] ?? DEFAULT_PLAYBACK), ...change } };
+      const next = { ...current, [kind]: updated };
+      playbackRef.current = next;
+      setPlaybackState(next);
       try {
-        localStorage.setItem(STREAM_AUDIO_KEY, JSON.stringify(next));
+        localStorage.setItem(PLAYBACK_KEYS[kind], JSON.stringify(updated));
       } catch {
         // not essential
       }
@@ -319,14 +402,19 @@ export function useVoice(onMembershipChange: () => void) {
       .on(RoomEvent.TrackSubscribed, (track: RemoteTrack, _pub: RemoteTrackPublication, participant: Participant) => {
         if (track.kind === Track.Kind.Audio) {
           const el = track.attach();
+          audioElementsRef.current.set(track, el);
           if (track.source === Track.Source.ScreenShareAudio) el.dataset.stream = participant.identity;
+          else el.dataset.voice = participant.identity;
           audioContainer().appendChild(el);
           applyAudioElements();
         }
         refresh();
       })
       .on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
-        if (track.kind === Track.Kind.Audio) track.detach().forEach((el) => el.remove());
+        if (track.kind === Track.Kind.Audio) {
+          track.detach();
+          removeAudioElement(track);
+        }
         refresh();
       })
       .on(RoomEvent.ParticipantConnected, () => {
@@ -353,6 +441,7 @@ export function useVoice(onMembershipChange: () => void) {
         if (roomRef.current !== room) return;
         roomRef.current = null;
         channelIdRef.current = null;
+        for (const track of [...audioElementsRef.current.keys()]) removeAudioElement(track);
         processorRef.current = null;
         setChannelId(null);
         setStatus("idle");
@@ -378,7 +467,7 @@ export function useVoice(onMembershipChange: () => void) {
       setError(`Couldn't join voice: ${describe(err)}`);
       await room.disconnect();
     }
-  }, [muted, deafened, refresh, setMicEnabled, refreshDevices, chime, applyAudioElements]);
+  }, [muted, deafened, refresh, setMicEnabled, refreshDevices, chime, applyAudioElements, removeAudioElement]);
 
   const leave = useCallback(() => {
     setError(null);
@@ -491,6 +580,9 @@ export function useVoice(onMembershipChange: () => void) {
     if (!room) return;
     try {
       await room.switchActiveDevice(kind, deviceId || "default");
+      if (kind === "audiooutput") {
+        for (const boost of boostsRef.current.values()) await boost.el.setSinkId?.(deviceId || "default");
+      }
       setError(null);
     } catch (err) {
       setError(`Couldn't switch device: ${describe(err)}`);
@@ -516,8 +608,8 @@ export function useVoice(onMembershipChange: () => void) {
     startScreenShare,
     stopScreenShare,
     watchStream,
-    streamAudio,
-    setStreamAudio,
+    playback,
+    setPlayback,
     audioSettings,
     setAudioSettings,
     micLevel,

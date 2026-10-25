@@ -1,7 +1,9 @@
+import { useEffect, useState } from "react";
 import type { Channel, ChannelType, User, VoiceState } from "./api.ts";
 import { Avatar, Icon } from "./ui.tsx";
-import { canShareScreen, type Voice } from "./useVoice.ts";
+import { canShareScreen, DEFAULT_PLAYBACK, MAX_VOICE_VOLUME, type Voice } from "./useVoice.ts";
 import { displayName, profileOf, useUsers } from "./users.tsx";
+import { VolumeControl } from "./VolumeControl.tsx";
 import type { Server } from "./useServer.ts";
 
 export type Selection = { kind: ChannelType; channelId: number };
@@ -57,6 +59,20 @@ export function Sidebar({
 }) {
   const users = useUsers();
   const inVoice = voice.status !== "idle";
+  /** Whose voice volume panel is open (people in our call). */
+  const [volumeFor, setVolumeFor] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (volumeFor === null) return;
+    const close = (e: PointerEvent) => {
+      if (!(e.target as Element).closest(".voice-member-volume, .voice-members li.adjustable")) setVolumeFor(null);
+    };
+    window.addEventListener("pointerdown", close);
+    return () => window.removeEventListener("pointerdown", close);
+  }, [volumeFor]);
+  useEffect(() => {
+    if (voice.status !== "connected") setVolumeFor(null);
+  }, [voice.status]);
   const voiceChannel = server.channels.find((c) => c.id === voice.channelId);
   const canManage = server.can("manageChannels");
   const canAdminister = server.can("manageInvites") || server.can("manageRoles");
@@ -148,13 +164,56 @@ export function Sidebar({
                   <ul className="voice-members">
                     {members.map((m) => {
                       const profile = profileOf(users, m.userId, m.name);
+                      // People in our call can be made louder or quieter (for us only).
+                      const adjustable = connectedHere && voice.status === "connected" && m.userId !== user.id;
+                      const playback = voice.playback.voice[m.userId] ?? DEFAULT_PLAYBACK;
+                      const toggleVolume = () => setVolumeFor((cur) => (cur === m.userId ? null : m.userId));
                       return (
-                      <li key={m.userId}>
-                        <Avatar userId={m.userId} name={profile.name} avatarUrl={profile.avatarUrl} size={24} speaking={m.speaking} />
-                        <span className="name">{profile.name}</span>
-                        {m.streaming && <span className="live-badge">LIVE</span>}
-                        {m.video && <Icon name="camera" size={14} />}
-                        {m.muted && <Icon name="mic" size={14} slashed />}
+                      <li
+                        key={m.userId}
+                        className={adjustable ? "adjustable" : undefined}
+                        onClick={adjustable ? toggleVolume : undefined}
+                        onContextMenu={
+                          adjustable
+                            ? (e) => {
+                                e.preventDefault();
+                                setVolumeFor(m.userId);
+                              }
+                            : undefined
+                        }
+                        title={adjustable ? "Change volume" : undefined}
+                      >
+                        <div className="voice-member-row">
+                          <Avatar userId={m.userId} name={profile.name} avatarUrl={profile.avatarUrl} size={24} speaking={m.speaking} />
+                          <span className="name">{profile.name}</span>
+                          {m.streaming && <span className="live-badge">LIVE</span>}
+                          {m.video && <Icon name="camera" size={14} />}
+                          {m.muted && <Icon name="mic" size={14} slashed />}
+                          {adjustable && playback.muted && (
+                            <span className="locally-muted" title="Muted for you">
+                              <Icon name="speaker" size={14} slashed />
+                            </span>
+                          )}
+                        </div>
+                        {adjustable && volumeFor === m.userId && (
+                          <div className="voice-member-volume" onClick={(e) => e.stopPropagation()}>
+                            <div className="voice-member-volume-title">
+                              <span>User volume</span>
+                              {playback.volume !== 1 && (
+                                <button className="link" onClick={() => voice.setPlayback("voice", m.userId, { volume: 1 })}>
+                                  Reset
+                                </button>
+                              )}
+                            </div>
+                            <VolumeControl
+                              audio={playback}
+                              onChange={(change) => voice.setPlayback("voice", m.userId, change)}
+                              max={MAX_VOICE_VOLUME}
+                              what={profile.name}
+                              showPercent
+                            />
+                          </div>
+                        )}
                       </li>
                       );
                     })}

@@ -259,13 +259,54 @@ button.link:hover {
 }
 
 .voice-members li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   padding: 4px 8px;
   border-radius: 4px;
   font-size: 14px;
   color: var(--text-muted);
+}
+
+.voice-member-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.voice-members li.adjustable {
+  cursor: pointer;
+}
+
+.voice-members li.adjustable:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.locally-muted {
+  display: flex;
+  color: var(--red);
+}
+
+.voice-member-volume {
+  margin-top: 6px;
+  padding: 8px;
+  border-radius: 4px;
+  background: var(--bg-darkest);
+  cursor: default;
+}
+
+.voice-member-volume-title {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.voice-member-volume .volume-control input[type="range"] {
+  flex: 1;
+  width: auto;
+  min-width: 0;
 }
 
 .voice-members .name {
@@ -794,22 +835,33 @@ button.link:hover {
   color: white;
 }
 
-.stream-volume {
+.volume-control {
   display: flex;
   align-items: center;
+  gap: 4px;
+}
+
+.volume-control input[type="range"] {
+  width: 90px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.volume-percent {
+  min-width: 40px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: right;
+}
+
+.tile-actions .volume-control {
   padding-right: 10px;
   border-radius: 4px;
   background: rgba(0, 0, 0, 0.6);
 }
 
-.tile-actions .stream-volume .icon-button {
+.tile-actions .volume-control .icon-button {
   background: transparent;
-}
-
-.stream-volume input[type="range"] {
-  width: 90px;
-  accent-color: var(--accent);
-  cursor: pointer;
 }
 
 .call-controls {

@@ -6,13 +6,14 @@ import { Avatar, Icon } from "./ui.tsx";
 import { profileOf, useUsers } from "./users.tsx";
 import {
   canShareScreen,
-  DEFAULT_STREAM_AUDIO,
+  DEFAULT_PLAYBACK,
   isFirefox,
+  MAX_VOICE_VOLUME,
   STREAM_QUALITIES,
-  type StreamAudio,
   type Voice,
   type VoiceParticipant,
 } from "./useVoice.ts";
+import { VolumeControl } from "./VolumeControl.tsx";
 
 type Tile = { key: string; kind: "user" | "screen"; p: VoiceParticipant };
 
@@ -25,32 +26,6 @@ function Video({ track, mirror = false, fit = "cover" }: { track: VideoTrack; mi
     return () => void track.detach(el);
   }, [track]);
   return <video ref={ref} className={`tile-video${mirror ? " mirror" : ""}`} style={{ objectFit: fit }} autoPlay playsInline muted />;
-}
-
-/** Mute button and volume slider for a stream's sound. */
-function StreamVolume({ audio, onChange }: { audio: StreamAudio; onChange: (change: Partial<StreamAudio>) => void }) {
-  const silent = audio.muted || audio.volume === 0;
-  const stop = (e: MouseEvent) => e.stopPropagation(); // don't focus or fullscreen the tile
-  return (
-    <div className="stream-volume" onClick={stop} onDoubleClick={stop}>
-      <button
-        className="icon-button"
-        title={silent ? "Unmute stream" : "Mute stream"}
-        onClick={() => onChange(audio.volume === 0 ? { volume: 1, muted: false } : { muted: !audio.muted })}
-      >
-        <Icon name="speaker" slashed={silent} />
-      </button>
-      <input
-        type="range"
-        min={0}
-        max={100}
-        value={audio.muted ? 0 : Math.round(audio.volume * 100)}
-        onChange={(e) => onChange({ volume: Number(e.target.value) / 100, muted: false })}
-        aria-label="Stream volume"
-        title={`Volume: ${audio.muted ? 0 : Math.round(audio.volume * 100)}%`}
-      />
-    </div>
-  );
 }
 
 type IOSVideo = HTMLVideoElement & { webkitEnterFullscreen?: () => void };
@@ -168,13 +143,23 @@ export function Stage({
             <>
               <Video track={p.camera} mirror={p.isLocal} fit={isFocused ? "contain" : "cover"} />
               {statsFor.has(t.key) && <StreamStats track={p.camera} isLocal={p.isLocal} />}
-              <div className="tile-actions">{statsButton(t.key)}</div>
             </>
           ) : (
             <div className="tile-avatar">
               <Avatar userId={p.userId} name={profile.name} avatarUrl={profile.avatarUrl} size={80} speaking={p.speaking} />
             </div>
           )}
+          <div className="tile-actions">
+            {!p.isLocal && (
+              <VolumeControl
+                audio={voice.playback.voice[p.userId] ?? DEFAULT_PLAYBACK}
+                onChange={(change) => voice.setPlayback("voice", p.userId, change)}
+                max={MAX_VOICE_VOLUME}
+                what={profile.name}
+              />
+            )}
+            {p.camera && statsButton(t.key)}
+          </div>
           <div className="tile-label">
             {p.muted && <Icon name="mic" size={16} slashed />}
             {profile.name}
@@ -216,9 +201,10 @@ export function Stage({
         </div>
         <div className="tile-actions">
           {!p.isLocal && screen.watching && screen.hasAudio && (
-            <StreamVolume
-              audio={voice.streamAudio[p.userId] ?? DEFAULT_STREAM_AUDIO}
-              onChange={(change) => voice.setStreamAudio(p.userId, change)}
+            <VolumeControl
+              audio={voice.playback.stream[p.userId] ?? DEFAULT_PLAYBACK}
+              onChange={(change) => voice.setPlayback("stream", p.userId, change)}
+              what="stream"
             />
           )}
           {showVideo && statsButton(t.key)}
